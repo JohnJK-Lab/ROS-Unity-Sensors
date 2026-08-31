@@ -16,7 +16,7 @@ Custom robot sensor simulation components based on **Unity + ROS-TCP-Connector +
 - RGB-D Camera
 - 后续还会更新...
 
-传感器数据通过 Unity Robotics ROS-TCP-Connector 发布到 ROS2，并可在 RViz2 中进行可视化。
+传感器数据通过 Unity Robotics ROS-TCP-Connector 发布到 ROS2，并可在 RViz2 中进行可视化。（直接拖拽至Unity组件内当作脚本即可运行）
 
 ---
 
