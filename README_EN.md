@@ -15,7 +15,7 @@ Currently implemented:
 - RGB-D Camera
 - More sensors will be added in the future...
 
-Sensor data is published from Unity to ROS2 through the Unity Robotics ROS-TCP-Connector and can be visualized in RViz2.
+Sensor data is published from Unity to ROS2 through the Unity Robotics ROS-TCP-Connector and can be visualized in RViz2.(Just drag and drop it onto a Unity GameObject as a script component to run.)
 
 ---
 
@@ -74,7 +74,7 @@ Add in RViz2:
 
 `Add → Image → /camera/image_raw`
 
-![RGB Camera](Images/img.png)
+![RGB Camera](fig/img.png)
 
 ---
 
@@ -127,7 +127,7 @@ Default parameters:
 
 Since the current depth implementation uses per-pixel CPU Raycast, the computational cost can become high at higher resolutions.
 
-![RGB-D Camera](Images/rgbd.png)
+![RGB-D Camera](fig/rgbd.png)
 
 ---
 
@@ -191,7 +191,7 @@ The following figure shows the result with `Keep Scan Horizontal` enabled.
 
 Even when the robot pitches, the 2D LiDAR scanning plane remains horizontal, reducing false detections of the ground.
 
-![2D LiDAR - Keep Horizontal](Images/2d1.png)
+![2D LiDAR - Keep Horizontal](fig/2d1.png)
 
 ### Considering Robot Pitch
 
@@ -201,7 +201,7 @@ When the robot moves in the direction indicated by the blue arrow, inertial effe
 
 As a result, some of the rear laser beams point downward and hit the ground. In the blue boxed region, the rear laser beams can be seen detecting the ground, which may generate false obstacle information in ROS2.
 
-![2D LiDAR - Follow Pitch](Images/2d2.png)
+![2D LiDAR - Follow Pitch](fig/2d2.png)
 
 Debug rays:
 
@@ -295,7 +295,7 @@ Debug rays:
 - Red: laser ray hits an object
 - Green: no object is detected within the maximum range
 
-![3D LiDAR](Images/3d.png)
+![3D LiDAR](fig/3d.png)
 
 RViz2:
 
