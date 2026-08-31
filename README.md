@@ -7,9 +7,6 @@
 
 基于 **Unity + ROS-TCP-Connector + ROS2** 实现的自定义机器人传感器仿真组件。
 Custom robot sensor simulation components based on **Unity + ROS-TCP-Connector + ROS2**.
-# Unity ROS2 Sensors
-
-基于 **Unity + ROS-TCP-Connector + ROS2** 实现的机器人传感器仿真组件。
 
 目前实现：
 
