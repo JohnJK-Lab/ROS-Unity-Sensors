@@ -75,7 +75,7 @@ RViz2 中添加：
 
 `Add → Image → /camera/image_raw`
 
-![RGB Camera](Images/img.png)
+![RGB Camera](fig/img.png)
 
 ---
 
@@ -128,7 +128,7 @@ Camera Pixel → ScreenPointToRay → Physics.Raycast → hit.distance → Depth
 
 由于当前 Depth 使用逐像素 CPU Raycast，高分辨率下计算量较大。
 
-![RGB-D Camera](Images/rgbd.png)
+![RGB-D Camera](fig/rgbd.png)
 
 ---
 
@@ -192,7 +192,7 @@ Camera Pixel → ScreenPointToRay → Physics.Raycast → hit.distance → Depth
 
 即使机器人发生俯仰，2D LiDAR 的扫描平面仍保持水平，可以减少地面误检测。
 
-![2D LiDAR - Keep Horizontal](Images/2d1.png)
+![2D LiDAR - Keep Horizontal](fig/2d1.png)
 
 ### 考虑机器人俯仰
 
@@ -202,7 +202,7 @@ Camera Pixel → ScreenPointToRay → Physics.Raycast → hit.distance → Depth
 
 此时机器人后部部分激光束会向下照射，并与地面发生碰撞。图中蓝色框区域可以看到后部激光束检测到了地面，从而可能在 ROS2 中形成错误的障碍物信息。
 
-![2D LiDAR - Follow Pitch](Images/2d2.png)
+![2D LiDAR - Follow Pitch](fig/2d2.png)
 
 Debug 射线：
 
@@ -294,7 +294,7 @@ Debug 射线：
 - 红色：激光命中物体
 - 绿色：最大量程内未检测到物体
 
-![3D LiDAR](Images/3d.png)
+![3D LiDAR](fig/3d.png)
 
 RViz2：
 
