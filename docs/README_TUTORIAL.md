@@ -143,6 +143,8 @@ hostname -I
 
 可将需要的 Prefab 拖入场景，再根据机器人模型调整位置和旋转。
 
+**！注意！**本unity项目RGBD相机与Camera单目相机同时在场景中使用的时候可能会导致ROS2发布话题卡顿
+
 ### 7. 配置传感器与 Collider
 
 主要脚本位于 `Scripts`：
@@ -373,6 +375,8 @@ The complete example also includes:
 - `Assets/Prefab/RGBD.prefab`
 
 Drag the required prefabs into the scene and adjust their positions and rotations for your robot model.
+
+**Warning:** Using the RGB-D camera and the monocular camera simultaneously in this Unity project may cause ROS 2 topic publishing to lag or become unresponsive.
 
 ### 7. Configure Sensors and Colliders
 
