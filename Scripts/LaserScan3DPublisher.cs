@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 using RosMessageTypes.Sensor;
 using RosMessageTypes.Std;
@@ -101,7 +102,7 @@ public class LaserScan3DPublisher : MonoBehaviour
     [Header("Collision Detection")]
 
     [Tooltip("参与激光检测的 Unity Layer")]
-    public string LayerMaskName = "TurtleBot3Manual";
+    public string LayerMaskName = "Default";
 
     [Tooltip("是否忽略 Trigger Collider")]
     public bool IgnoreTrigger = true;
@@ -152,6 +153,21 @@ public class LaserScan3DPublisher : MonoBehaviour
 
     private int m_LayerMask;
 
+    private QueryTriggerInteraction m_TriggerMode;
+
+    // 扫描点列表跨帧复用，避免每次扫描重新申请容量。
+    private readonly List<LidarPoint> m_Points =
+        new List<LidarPoint>();
+
+    private Vector3[] m_LocalDirections;
+
+    private int m_CachedHorizontalMeasurements;
+    private int m_CachedVerticalChannels;
+    private float m_CachedHorizontalStart;
+    private float m_CachedHorizontalEnd;
+    private float m_CachedVerticalMin;
+    private float m_CachedVerticalMax;
+
 
     // =========================================================
     // 点结构
@@ -176,6 +192,14 @@ public class LaserScan3DPublisher : MonoBehaviour
             this.z = z;
             this.intensity = intensity;
         }
+    }
+
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct FloatIntUnion
+    {
+        [FieldOffset(0)] public float floatValue;
+        [FieldOffset(0)] public int intValue;
     }
 
 
@@ -248,6 +272,21 @@ public class LaserScan3DPublisher : MonoBehaviour
             m_LayerMask = ~0;
         }
 
+        m_TriggerMode =
+            IgnoreTrigger
+            ? QueryTriggerInteraction.Ignore
+            : QueryTriggerInteraction.Collide;
+
+        int maximumPointCount =
+            HorizontalMeasurements * VerticalChannels;
+
+        if (m_Points.Capacity < maximumPointCount)
+        {
+            m_Points.Capacity = maximumPointCount;
+        }
+
+        EnsureLocalDirectionCache();
+
 
         m_TimeNextScanSeconds =
             Clock.Now +
@@ -283,20 +322,26 @@ public class LaserScan3DPublisher : MonoBehaviour
 
     void ScanAndPublish()
     {
-        List<LidarPoint> points =
-            new List<LidarPoint>(
-                HorizontalMeasurements *
-                VerticalChannels
-            );
+        // 保留运行时修改扫描参数和 Trigger 设置的能力。
+        EnsureLocalDirectionCache();
 
-
-        // Trigger 设置
-        QueryTriggerInteraction triggerMode =
+        m_TriggerMode =
             IgnoreTrigger
-            ?
-            QueryTriggerInteraction.Ignore
-            :
-            QueryTriggerInteraction.Collide;
+            ? QueryTriggerInteraction.Ignore
+            : QueryTriggerInteraction.Collide;
+
+        m_Points.Clear();
+
+        // 同一扫描内传感器姿态不变，只计算一次。
+        Vector3 sensorPosition = transform.position;
+        Quaternion sensorRotation = transform.rotation;
+        float sensorYawDegrees = sensorRotation.eulerAngles.y;
+        Quaternion yawRotation = Quaternion.Euler(
+            0.0f,
+            sensorYawDegrees,
+            0.0f
+        );
+        Quaternion inverseYawRotation = Quaternion.Inverse(yawRotation);
 
 
         // =====================================================
@@ -309,28 +354,6 @@ public class LaserScan3DPublisher : MonoBehaviour
             verticalIndex++
         )
         {
-            float verticalT;
-
-            if (VerticalChannels == 1)
-            {
-                verticalT = 0.5f;
-            }
-            else
-            {
-                verticalT =
-                    verticalIndex /
-                    (float)(VerticalChannels - 1);
-            }
-
-
-            float verticalAngle =
-                Mathf.Lerp(
-                    VerticalAngleMinDegrees,
-                    VerticalAngleMaxDegrees,
-                    verticalT
-                );
-
-
             // =================================================
             // 水平扫描
             // =================================================
@@ -341,45 +364,12 @@ public class LaserScan3DPublisher : MonoBehaviour
                 horizontalIndex++
             )
             {
-                float horizontalT =
-                    horizontalIndex /
-                    (float)(HorizontalMeasurements - 1);
-
-
-                float horizontalAngle =
-                    Mathf.Lerp(
-                        HorizontalAngleStartDegrees,
-                        HorizontalAngleEndDegrees,
-                        horizontalT
-                    );
-
-
-                // =============================================
-                // 雷达自身局部射线
-                // =============================================
-
-                /*
-                 * Unity：
-                 *
-                 * X = 右
-                 * Y = 上
-                 * Z = 前
-                 *
-                 * horizontalAngle：
-                 * 绕 Y 轴
-                 *
-                 * verticalAngle：
-                 * 绕 X 轴
-                 */
+                int directionIndex =
+                    verticalIndex * HorizontalMeasurements +
+                    horizontalIndex;
 
                 Vector3 localDirection =
-                    Quaternion.Euler(
-                        -verticalAngle,
-                        horizontalAngle,
-                        0.0f
-                    )
-                    *
-                    Vector3.forward;
+                    m_LocalDirections[directionIndex];
 
 
                 Vector3 worldDirection;
@@ -397,18 +387,6 @@ public class LaserScan3DPublisher : MonoBehaviour
                      * 忽略车辆 Roll/Pitch。
                      */
 
-                    float yawDegrees =
-                        transform.rotation.eulerAngles.y;
-
-
-                    Quaternion yawRotation =
-                        Quaternion.Euler(
-                            0.0f,
-                            yawDegrees,
-                            0.0f
-                        );
-
-
                     worldDirection =
                         yawRotation *
                         localDirection;
@@ -421,9 +399,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                 else
                 {
                     worldDirection =
-                        transform.TransformDirection(
-                            localDirection
-                        );
+                        sensorRotation * localDirection;
                 }
 
 
@@ -435,7 +411,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                 // =============================================
 
                 Vector3 measurementStart =
-                    transform.position +
+                    sensorPosition +
                     worldDirection *
                     RangeMetersMin;
 
@@ -455,7 +431,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                         out hit,
                         rayLength,
                         m_LayerMask,
-                        triggerMode
+                        m_TriggerMode
                     );
 
 
@@ -475,7 +451,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                      */
 
                     Vector3 hitWorldPosition =
-                        transform.position +
+                        sensorPosition +
                         worldDirection *
                         measuredDistance;
 
@@ -498,29 +474,13 @@ public class LaserScan3DPublisher : MonoBehaviour
                          * PointCloud 的坐标也使用仅 Yaw 的雷达坐标系。
                          */
 
-                        float yawDegrees =
-                            transform.rotation.eulerAngles.y;
-
-
-                        Quaternion yawRotation =
-                            Quaternion.Euler(
-                                0.0f,
-                                yawDegrees,
-                                0.0f
-                            );
-
-
                         Vector3 relativeWorld =
                             hitWorldPosition -
-                            transform.position;
+                            sensorPosition;
 
 
                         localHitPoint =
-                            Quaternion.Inverse(
-                                yawRotation
-                            )
-                            *
-                            relativeWorld;
+                            inverseYawRotation * relativeWorld;
                     }
                     else
                     {
@@ -571,7 +531,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                         localHitPoint.y;
 
 
-                    points.Add(
+                    m_Points.Add(
                         new LidarPoint(
                             rosX,
                             rosY,
@@ -626,8 +586,101 @@ public class LaserScan3DPublisher : MonoBehaviour
         // =====================================================
 
         PublishPointCloud(
-            points
+            m_Points
         );
+    }
+
+
+    // =========================================================
+    // 扫描方向缓存
+    // =========================================================
+
+    private void EnsureLocalDirectionCache()
+    {
+        bool cacheIsCurrent =
+            m_LocalDirections != null &&
+            m_CachedHorizontalMeasurements == HorizontalMeasurements &&
+            m_CachedVerticalChannels == VerticalChannels &&
+            Mathf.Approximately(m_CachedHorizontalStart, HorizontalAngleStartDegrees) &&
+            Mathf.Approximately(m_CachedHorizontalEnd, HorizontalAngleEndDegrees) &&
+            Mathf.Approximately(m_CachedVerticalMin, VerticalAngleMinDegrees) &&
+            Mathf.Approximately(m_CachedVerticalMax, VerticalAngleMaxDegrees);
+
+        if (cacheIsCurrent)
+        {
+            return;
+        }
+
+        if (HorizontalMeasurements < 2)
+        {
+            HorizontalMeasurements = 2;
+        }
+
+        if (VerticalChannels < 1)
+        {
+            VerticalChannels = 1;
+        }
+
+        int maximumPointCount =
+            HorizontalMeasurements * VerticalChannels;
+
+        if (m_Points.Capacity < maximumPointCount)
+        {
+            m_Points.Capacity = maximumPointCount;
+        }
+
+        m_LocalDirections = new Vector3[
+            HorizontalMeasurements * VerticalChannels
+        ];
+
+        m_CachedHorizontalMeasurements = HorizontalMeasurements;
+        m_CachedVerticalChannels = VerticalChannels;
+        m_CachedHorizontalStart = HorizontalAngleStartDegrees;
+        m_CachedHorizontalEnd = HorizontalAngleEndDegrees;
+        m_CachedVerticalMin = VerticalAngleMinDegrees;
+        m_CachedVerticalMax = VerticalAngleMaxDegrees;
+
+        for (int verticalIndex = 0;
+             verticalIndex < VerticalChannels;
+             verticalIndex++)
+        {
+            float verticalT =
+                VerticalChannels == 1
+                ? 0.5f
+                : verticalIndex / (float)(VerticalChannels - 1);
+
+            float verticalAngle = Mathf.Lerp(
+                VerticalAngleMinDegrees,
+                VerticalAngleMaxDegrees,
+                verticalT
+            );
+
+            for (int horizontalIndex = 0;
+                 horizontalIndex < HorizontalMeasurements;
+                 horizontalIndex++)
+            {
+                float horizontalT =
+                    horizontalIndex /
+                    (float)(HorizontalMeasurements - 1);
+
+                float horizontalAngle = Mathf.Lerp(
+                    HorizontalAngleStartDegrees,
+                    HorizontalAngleEndDegrees,
+                    horizontalT
+                );
+
+                int index =
+                    verticalIndex * HorizontalMeasurements +
+                    horizontalIndex;
+
+                m_LocalDirections[index] =
+                    (Quaternion.Euler(
+                        -verticalAngle,
+                        horizontalAngle,
+                        0.0f
+                    ) * Vector3.forward).normalized;
+            }
+        }
     }
 
 
@@ -639,10 +692,8 @@ public class LaserScan3DPublisher : MonoBehaviour
         List<LidarPoint> points
     )
     {
-        var timestamp =
-            new TimeStamp(
-                Clock.time
-            );
+        TimeMsg timestamp =
+            GetSystemTimeMessage();
 
 
         // =====================================================
@@ -810,14 +861,7 @@ public class LaserScan3DPublisher : MonoBehaviour
                             FrameId,
 
                         stamp =
-                            new TimeMsg
-                            {
-                                sec =
-                                    timestamp.Seconds,
-
-                                nanosec =
-                                    timestamp.NanoSeconds
-                            }
+                            timestamp
                     },
 
 
@@ -876,30 +920,51 @@ public class LaserScan3DPublisher : MonoBehaviour
         float value
     )
     {
-        byte[] bytes =
-            BitConverter.GetBytes(
-                value
-            );
-
-
-        /*
-         * ROS 一般使用 little-endian。
-         */
-
-        if (!BitConverter.IsLittleEndian)
+        FloatIntUnion converter = new FloatIntUnion
         {
-            Array.Reverse(
-                bytes
-            );
-        }
+            floatValue = value
+        };
 
+        int bits = converter.intValue;
 
-        Buffer.BlockCopy(
-            bytes,
-            0,
-            destination,
-            offset,
-            4
-        );
+        // PointCloud2 使用 little-endian。直接写入目标数组，避免
+        // BitConverter.GetBytes() 为每个坐标创建临时 byte[4]。
+        destination[offset] = (byte)bits;
+        destination[offset + 1] = (byte)(bits >> 8);
+        destination[offset + 2] = (byte)(bits >> 16);
+        destination[offset + 3] = (byte)(bits >> 24);
     }
+
+    // =========================================================
+    // ROS system timestamp
+    // =========================================================
+
+    private static TimeMsg GetSystemTimeMessage()
+    {
+        // DateTime uses 100 ns ticks. ROS Time uses seconds + nanoseconds.
+        const long UnixEpochTicks = 621355968000000000L;
+
+        long elapsedTicks =
+            DateTime.UtcNow.Ticks - UnixEpochTicks;
+
+        return new TimeMsg
+        {
+            sec =
+                (int)(
+                    elapsedTicks /
+                    TimeSpan.TicksPerSecond
+                ),
+
+            nanosec =
+                (uint)(
+                    (
+                        elapsedTicks %
+                        TimeSpan.TicksPerSecond
+                    )
+                    * 100L
+                )
+        };
+    }
+
 }
+

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using RosMessageTypes.Sensor;
@@ -99,7 +100,7 @@ public class LaserScan2DPublisher : MonoBehaviour
     [Header("Collision Detection")]
 
     [Tooltip("需要检测的 Unity Layer 名称")]
-    public string LayerMaskName = "TurtleBot3Manual";
+    public string LayerMaskName = "Default";
 
     [Tooltip("是否忽略 Trigger Collider")]
     public bool IgnoreTrigger = true;
@@ -145,6 +146,10 @@ public class LaserScan2DPublisher : MonoBehaviour
     private double m_TimeLastScanBeganSeconds = -1.0;
 
     private int m_LayerMask;
+
+    private QueryTriggerInteraction m_QueryTrigger;
+
+    private float[] m_EmptyIntensities;
 
 
     // =========================================================
@@ -223,6 +228,19 @@ public class LaserScan2DPublisher : MonoBehaviour
             m_LayerMask = ~0;
         }
 
+        m_QueryTrigger =
+            IgnoreTrigger
+            ? QueryTriggerInteraction.Ignore
+            : QueryTriggerInteraction.Collide;
+
+        if (ranges.Capacity < NumMeasurementsPerScan)
+        {
+            ranges.Capacity = NumMeasurementsPerScan;
+        }
+
+        // 强度始终为 0，可跨帧复用同一个只读数组。
+        m_EmptyIntensities = new float[NumMeasurementsPerScan];
+
 
         // -----------------------------------------------------
         // 第一次扫描时间
@@ -240,6 +258,23 @@ public class LaserScan2DPublisher : MonoBehaviour
 
     private void BeginScan()
     {
+        // 保留运行时修改 Inspector 参数的能力。
+        m_QueryTrigger =
+            IgnoreTrigger
+            ? QueryTriggerInteraction.Ignore
+            : QueryTriggerInteraction.Collide;
+
+        if (ranges.Capacity < NumMeasurementsPerScan)
+        {
+            ranges.Capacity = NumMeasurementsPerScan;
+        }
+
+        if (m_EmptyIntensities == null ||
+            m_EmptyIntensities.Length != NumMeasurementsPerScan)
+        {
+            m_EmptyIntensities = new float[NumMeasurementsPerScan];
+        }
+
         isScanning = true;
 
         m_TimeLastScanBeganSeconds =
@@ -285,10 +320,8 @@ public class LaserScan2DPublisher : MonoBehaviour
         // ROS 时间戳
         // =====================================================
 
-        var timestamp =
-            new TimeStamp(
-                Clock.time
-            );
+        TimeMsg timestamp =
+            GetSystemTimeMessage();
 
 
         // =====================================================
@@ -341,14 +374,7 @@ public class LaserScan2DPublisher : MonoBehaviour
                             FrameId,
 
                         stamp =
-                            new TimeMsg
-                            {
-                                sec =
-                                    timestamp.Seconds,
-
-                                nanosec =
-                                    timestamp.NanoSeconds
-                            }
+                            timestamp
                     },
 
                 range_min =
@@ -380,7 +406,7 @@ public class LaserScan2DPublisher : MonoBehaviour
                     (float)PublishPeriodSeconds,
 
                 intensities =
-                    new float[ranges.Count],
+                    m_EmptyIntensities,
 
                 ranges =
                     ranges.ToArray()
@@ -662,14 +688,6 @@ public class LaserScan2DPublisher : MonoBehaviour
             // Trigger 设置
             // =================================================
 
-            QueryTriggerInteraction queryTrigger =
-                IgnoreTrigger
-                ?
-                QueryTriggerInteraction.Ignore
-                :
-                QueryTriggerInteraction.Collide;
-
-
             // =================================================
             // Raycast
             // =================================================
@@ -683,7 +701,7 @@ public class LaserScan2DPublisher : MonoBehaviour
                     out hit,
                     rayLength,
                     m_LayerMask,
-                    queryTrigger
+                    m_QueryTrigger
                 );
 
 
@@ -791,4 +809,37 @@ public class LaserScan2DPublisher : MonoBehaviour
             EndScan();
         }
     }
+
+    // =========================================================
+    // ROS system timestamp
+    // =========================================================
+
+    private static TimeMsg GetSystemTimeMessage()
+    {
+        // DateTime uses 100 ns ticks. ROS Time uses seconds + nanoseconds.
+        const long UnixEpochTicks = 621355968000000000L;
+
+        long elapsedTicks =
+            DateTime.UtcNow.Ticks - UnixEpochTicks;
+
+        return new TimeMsg
+        {
+            sec =
+                (int)(
+                    elapsedTicks /
+                    TimeSpan.TicksPerSecond
+                ),
+
+            nanosec =
+                (uint)(
+                    (
+                        elapsedTicks %
+                        TimeSpan.TicksPerSecond
+                    )
+                    * 100L
+                )
+        };
+    }
+
 }
+
